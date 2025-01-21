@@ -4,6 +4,9 @@ const express = require('express');
 const bodyParser = require('body-parser');
 const { TwitterApi } = require('twitter-api-v2');
 const schedule = require('node-schedule');
+const fs = require('fs');
+const path = require('path');
+const fetch = require('node-fetch');
 
 const app = express();
 const port = process.env.PORT || 3000;
@@ -14,108 +17,199 @@ app.use(express.json());
 const gemini_api_key = process.env.API_KEY;
 const googleAI = new GoogleGenerativeAI(gemini_api_key);
 const geminiModel = googleAI.getGenerativeModel({
-  model: "gemini-1.5-flash",
+    model: "gemini-1.5-flash",
 });
 
 // Twitter API setup
 const twitterClient = new TwitterApi({
-  appKey: process.env.TWITTER_APP_KEY,
-  appSecret: process.env.TWITTER_APP_SECRET,
-  accessToken: process.env.TWITTER_ACCESS_TOKEN,
-  accessSecret: process.env.TWITTER_ACCESS_SECRET,
+    appKey: process.env.TWITTER_APP_KEY,
+    appSecret: process.env.TWITTER_APP_SECRET,
+    accessToken: process.env.TWITTER_ACCESS_TOKEN,
+    accessSecret: process.env.TWITTER_ACCESS_SECRET,
 });
 
-
-const path = require('path');
+// Directory for saving images
+const imagesDir = path.join(__dirname, 'images');
 
 // Serve the HTML file at the root route
 app.get('/', (req, res) => {
-  res.sendFile(path.join(__dirname, 'index.html'));
+    res.sendFile(path.join(__dirname, 'index.html'));
 });
-
 
 // Prompts for generating tweets
 const tweetPrompts = [
-  "Share an inspiring message about coding and problem-solving that motivates others to embrace challenges and keep learning. Use coding-related emojis like 💻, 🔧, and 🚀.",
-
-  "Post a funny coding joke that developers can relate to, something light-hearted that adds a smile to their day. Include emojis like 😂, 💻, and 😅.",
-
-  "Share a new tech trend or fact that excites you! Something that's changing the world of technology. Add relevant emojis like 📱, ⚡, and 🔥 to make it stand out.",
-
-  "Write a motivational tweet about life and career. Talk about how persistence and passion drive success, and encourage others to pursue their goals with determination. Include icons like 💡, 🌟, and 🎯.",
-
-  "Share a short market update or new tech development that's gaining traction. Engage your audience by presenting the info in a way that shows why it's important. Use trending emojis like 📊, 💹, and 📈.",
-
-  "Share a quick, witty developer joke that only true tech enthusiasts will get! Make it relatable, humorous, and encouraging. Use emojis like 😎, 👨‍💻, and 🤖.",
-
-  "Post an encouraging message for fellow students, especially those in IT and tech fields. Inspire them to keep pushing the boundaries of innovation and solving real-world problems. Add emojis like 🎓, 💡, and 🧑‍💻.",
-
-  "Write a tweet about how technology can change lives, especially in the context of IT students solving real-world problems. Use emojis like 🌍, 💻, and 🔑.",
-
-  "Share a lighthearted post about coding challenges, but frame it in a humorous way to relate to developers and tech enthusiasts. Add coding emojis like 👩‍💻, 🛠️, and 🤔.",
-
-  "Create a motivational tweet about resilience in the tech industry. Talk about overcoming failures and turning them into learning opportunities. Use icons like 💪, 🔄, and 🎯.",
+    "Write a tweet about AI and technology.",
+    "Share a fun fact about space exploration.",
+    // Add more prompts as needed
 ];
 
 let currentPromptIndex = 0;
 
 // Function to generate a tweet
 const generateTweet = async (prompt) => {
-  try {
-    const result = await geminiModel.generateContent(prompt);
-    const response = result.response;
-    return response.text().trim();
-  } catch (error) {
-    console.error("Error generating tweet:", error);
-    return null;
-  }
+    try {
+        const result = await geminiModel.generateContent(prompt);
+        return result.response.text().trim();
+    } catch (error) {
+        console.error("Error generating tweet:", error);
+        return null;
+    }
 };
 
 // Function to post a tweet
 const postTweet = async (content) => {
-  try {
-    const tweet = await twitterClient.v2.tweet(content);
-    console.log("Tweet posted:", tweet);
-  } catch (error) {
-    console.error("Error posting tweet:", error);
-  }
+    try {
+        const tweet = await twitterClient.v2.tweet(content);
+        console.log("Tweet posted:", tweet);
+    } catch (error) {
+        console.error("Error posting tweet:", error);
+    }
 };
 
-schedule.scheduleJob('0 8 * * *', async () => { // This will run every day at 8 AM
-  const prompt = tweetPrompts[currentPromptIndex];
-  const tweetContent = await generateTweet(prompt);
+// Function to generate an image
+async function generateImage(data) {
+    try {
+        const response = await fetch(
+            "https://api-inference.huggingface.co/models/ZB-Tech/Text-to-Image",
+            {
+                headers: {
+                    Authorization: `Bearer ${process.env.HUGGINGFACE_API_KEY}`,
+                },
+                method: "POST",
+                body: JSON.stringify({ inputs: data }),
+            }
+        );
 
-  if (tweetContent) {
-    await postTweet(tweetContent);
-  }
+        if (!response.ok) {
+            const errorDetails = await response.json();
+            throw new Error(errorDetails.error || "API error");
+        }
 
-  currentPromptIndex = (currentPromptIndex + 1) % tweetPrompts.length;
-  console.log("Next prompt index:", currentPromptIndex);
-});
+        const buffer = await response.buffer();
+        
+        if (!fs.existsSync(imagesDir)) {
+            fs.mkdirSync(imagesDir, { recursive: true });
+        }
+
+        const filePath = path.join(imagesDir, `${Date.now()}.png`);
+        fs.writeFileSync(filePath, buffer); // Save image to the file system
+
+        return filePath; // Return the path to the saved image
+    } catch (error) {
+        console.error(`Error generating image: ${error.message}`);
+        throw error;
+    }
+}
+
+// Function to upload image to Twitter
+const uploadImage = async (imagePath) => {
+    try {
+        const mediaData = fs.readFileSync(imagePath);
+        const mediaId = await twitterClient.v1.uploadMedia(mediaData, { mimeType: 'image/png' });
+        return mediaId;
+    } catch (error) {
+        console.error("Error uploading image to Twitter:", error);
+        return null;
+    }
+};
+
+// Function to post a tweet with an image
+const postTweetWithImage = async (content, imagePath) => {
+    try {
+        const mediaId = await uploadImage(imagePath);
+        if (mediaId) {
+            const tweet = await twitterClient.v2.tweet({
+                text: content,
+                media: { media_ids: [mediaId] }
+            });
+            console.log("Tweet posted:", tweet);
+            return tweet;
+        } else {
+            console.error("Failed to upload image, tweet not posted.");
+        }
+    } catch (error) {
+        console.error("Error posting tweet:", error);
+    }
+};
+
 
 
 // Test endpoint to manually generate and post a tweet
 app.post('/PostTweet', async (req, res) => {
-  // const prompt = tweetPrompts[currentPromptIndex];
-  const { prompt } = req.body;
-  const tweetContent = await generateTweet(prompt);
-  // const tweetContent = "hi i am prathamesh jadhav";
-  console.log("tweetcontent", tweetContent)
+    const { prompt } = req.body;
+    let tweetContent;
 
-  if (tweetContent) {
-    await postTweet(tweetContent);
-    res.json({ success: true, tweet: tweetContent });
-  } else {
-    res.status(500).json({ success: false, error: "Failed to generate tweet." });
-  }
+    const containsText = prompt.toLowerCase().includes('$image');
+    const data = await generateTweet(prompt);
 
-  currentPromptIndex = (currentPromptIndex + 1) % tweetPrompts.length;
+    if (containsText) {
+        try {
+            const imagePath = await generateImage(data);
+
+            if (imagePath) {
+                tweetContent = await postTweetWithImage(data, imagePath);
+                return res.json({ success: true, tweet: data });
+            } else {
+                return res.status(500).json({ success: false, error: "Failed to generate image." });
+            }
+        } catch (error) {
+            return res.status(500).json({ success: false, error: error.message });
+        }
+    } else {
+        try {
+            tweetContent = await generateTweet(prompt);
+            if (tweetContent) {
+                await postTweet(tweetContent);
+                return res.json({ success: true, tweet: tweetContent });
+            } else {
+                return res.status(500).json({ success: false, error: "Failed to generate tweet." });
+            }
+        } catch (error) {
+            return res.status(500).json({ success: false, error: error.message });
+        }
+    }
+
+    currentPromptIndex = (currentPromptIndex + 1) % tweetPrompts.length;
+});
+
+// Schedule job to post a tweet at 8 AM every day
+schedule.scheduleJob('0 8 * * *', async () => {
+    const prompt = tweetPrompts[currentPromptIndex];
+    let tweetContent;
+
+    const containsText = prompt.toLowerCase().includes('$image');
+    const data = await generateTweet(prompt);
+
+
+    if (containsText) {
+        try {
+            const imagePath = await generateImage(data);
+
+            if (imagePath) {
+                tweetContent = await postTweetWithImage(data, imagePath);
+            } else {
+                console.error("Failed to generate image.");
+            }
+        } catch (error) {
+            console.error("Error generating image:", error);
+        }
+    } else {
+        try {
+            tweetContent = await generateTweet(prompt);
+            if (tweetContent) {
+                await postTweet(tweetContent);
+            } else {
+                console.error("Failed to generate tweet.");
+            }
+        } catch (error) {
+            console.error("Error generating tweet:", error);
+        }
+    }
+
+    currentPromptIndex = (currentPromptIndex + 1) % tweetPrompts.length;
 });
 
 // Start the server
 app.listen(port, () => {
-  console.log(`Server is running on http://localhost:${port}`);
+    console.log(`Server is running on http://localhost:${port}`);
 });
-
-
-
