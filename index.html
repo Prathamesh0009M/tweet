@@ -1,0 +1,145 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>TweetCrafter</title>
+    <style>
+        body {
+            background-color: #121212;
+            color: #ffffff;
+            font-family: Arial, sans-serif;
+            margin: 0;
+            padding: 0;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            height: 100vh;
+            text-align: center;
+        }
+
+        /* Navbar styles */
+        nav {
+            background-color: #1DA1F2;
+            width: 100%;
+            padding: 10px 20px;
+            position: absolute;
+            top: 0;
+            left: 0;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+        }
+
+        nav h2 {
+            color: white;
+            margin: 0;
+            font-size: 1.8rem;
+        }
+
+        h1 {
+            color: #1DA1F2;
+            font-size: 3rem;
+            margin-bottom: 20px;
+        }
+
+        form {
+            background-color: #1c1c1c;
+            padding: 20px;
+            border-radius: 10px;
+            box-shadow: 0 4px 8px rgba(0, 0, 0, 0.2);
+            max-width: 500px;
+            width: 100%;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+        }
+
+        label {
+            font-size: 1.2rem;
+            margin-bottom: 10px;
+            color: #b0b0b0;
+        }
+
+        input {
+            width: 100%;
+            padding: 10px;
+            margin-bottom: 20px;
+            border: 2px solid #333;
+            border-radius: 5px;
+            background-color: #121212;
+            color: #ffffff;
+            font-size: 1rem;
+        }
+
+        button {
+            background-color: #1DA1F2;
+            color: #ffffff;
+            border: none;
+            padding: 12px 20px;
+            font-size: 1.2rem;
+            border-radius: 5px;
+            cursor: pointer;
+            transition: background-color 0.3s;
+            width: 100%;
+        }
+
+        button:hover {
+            background-color: #0d8bcf;
+        }
+
+        .container {
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+        }
+    </style>
+</head>
+
+<body>
+    <nav>
+        <h2>TweetCrafter</h2>
+    </nav>
+
+    <div class="container">
+        <h1>Generate and Post Your Tweet</h1>
+        <form onsubmit="submitForm(event)">
+            <label for="prompt">Enter Tweet Prompt:</label>
+            <input type="text" id="prompt" name="prompt" required>
+            <button type="submit">Generate and Post Tweet</button>
+        </form>
+    </div>
+
+    <script>
+        async function submitForm(event) {
+            event.preventDefault(); // Prevent the default form submission
+
+            const prompt = document.getElementById('prompt').value;
+
+            try {
+                const response = await fetch('/PostTweet', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({ prompt }),
+                });
+
+                const data = await response.json();
+                if (data.success) {
+                    alert('Tweet generated and posted: ' + data.tweet);
+                } else {
+                    alert('Failed to generate tweet: ' + data.error);
+                }
+            } catch (error) {
+                console.error('Error:', error);
+                alert('Error submitting the prompt');
+            }
+        }
+    </script>
+</body>
+
+</html>
