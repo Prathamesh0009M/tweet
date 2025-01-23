@@ -4,14 +4,20 @@ const express = require('express');
 const bodyParser = require('body-parser');
 const { TwitterApi } = require('twitter-api-v2');
 const schedule = require('node-schedule');
-const fs = require('fs');
 const path = require('path');
+
+// IMAGE TO BE ACTIVATE 
+
 const fetch = require('node-fetch');
 
 const app = express();
 const port = process.env.PORT || 3000;
 app.use(bodyParser.json());
 app.use(express.json());
+
+app.get('/', (req, res) => {
+    res.sendFile(path.join(__dirname, 'index.html'));
+});
 
 // Google Gemini setup
 const gemini_api_key = process.env.API_KEY;
@@ -28,18 +34,27 @@ const twitterClient = new TwitterApi({
     accessSecret: process.env.TWITTER_ACCESS_SECRET,
 });
 
-// Directory for saving images
-const imagesDir = path.join(__dirname, 'images');
-
-// Serve the HTML file at the root route
-app.get('/', (req, res) => {
-    res.sendFile(path.join(__dirname, 'index.html'));
-});
-
 // Prompts for generating tweets
 const tweetPrompts = [
-    "Write a tweet about AI and technology.",
-    "Share a fun fact about space exploration.",
+    "Share an inspiring message about coding and problem-solving that motivates others to embrace challenges and keep learning. Use coding-related emojis like 💻, 🔧, and 🚀.  give me only 1 short 3 line of response",
+
+    "Post a funny coding joke that developers can relate to, something light-hearted that adds a smile to their day. Include emojis like 😂, 💻, and 😅. give me only 1 short 3 line of response. $image",
+
+    "Share a new tech trend or fact that excites you! Something that's changing the world of technology. Add relevant emojis like 📱, ⚡, and 🔥 to make it stand out. give me only 1 short 3 line of response.",
+
+    "Write a motivational tweet about life and career. Talk about how persistence and passion drive success, and encourage others to pursue their goals with determination. Include icons like 💡, 🌟, and 🎯. give me only 1 short 3 line of response. $image",
+
+    "Share a short market update or new tech development that's gaining traction. Engage your audience by presenting the info in a way that shows why it's important. Use trending emojis like 📊, 💹, and 📈. give me only 1 short 3 line of response",
+
+    "Share a quick, witty developer joke that only true tech enthusiasts will get! Make it relatable, humorous, and encouraging. Use emojis like 😎, 👨‍💻, and 🤖. give me only 1 short 3 line of response",
+
+    "Post an encouraging message for fellow students, especially those in IT and tech fields. Inspire them to keep pushing the boundaries of innovation and solving real-world problems. Add emojis like 🎓, 💡, and 🧑‍💻. give me only 1 short 3 line of response. $image",
+
+    "Write a tweet about how technology can change lives, especially in the context of IT students solving real-world problems. Use emojis like 🌍, 💻, and 🔑. give me only 1 short 3 line of response ",
+
+    "Share a lighthearted post about coding challenges, but frame it in a humorous way to relate to developers and tech enthusiasts. Add coding emojis like 👩‍💻, 🛠️, and 🤔. give me only 1 short 3 line of response. ",
+
+    "Create a motivational tweet about resilience in the tech industry. Talk about overcoming failures and turning them into learning opportunities. Use icons like 💪, 🔄, and 🎯 give me only 1 short 3 line of response. $image",
     // Add more prompts as needed
 ];
 
@@ -85,16 +100,9 @@ async function generateImage(data) {
             throw new Error(errorDetails.error || "API error");
         }
 
-        const buffer = await response.buffer();
-        
-        if (!fs.existsSync(imagesDir)) {
-            fs.mkdirSync(imagesDir, { recursive: true });
-        }
+        const buffer = await response.buffer(); // Get image buffer
 
-        const filePath = path.join(imagesDir, `${Date.now()}.png`);
-        fs.writeFileSync(filePath, buffer); // Save image to the file system
-
-        return filePath; // Return the path to the saved image
+        return buffer; // Return image buffer directly
     } catch (error) {
         console.error(`Error generating image: ${error.message}`);
         throw error;
@@ -102,18 +110,15 @@ async function generateImage(data) {
 }
 
 // Function to upload image to Twitter
-const uploadImage = async (imagePath) => {
+const uploadImage = async (imageBuffer) => {
     try {
-        const mediaData = fs.readFileSync(imagePath);
-        const mediaId = await twitterClient.v1.uploadMedia(mediaData, { mimeType: 'image/png' });
+        const mediaId = await twitterClient.v1.uploadMedia(imageBuffer, { mimeType: 'image/png' });
         return mediaId;
     } catch (error) {
         console.error("Error uploading image to Twitter:", error);
         return null;
     }
 };
-
-// Function to post a tweet with an image
 const postTweetWithImage = async (content, imagePath) => {
     try {
         const mediaId = await uploadImage(imagePath);
@@ -122,16 +127,15 @@ const postTweetWithImage = async (content, imagePath) => {
                 text: content,
                 media: { media_ids: [mediaId] }
             });
-            console.log("Tweet posted:", tweet);
+            console.log("Tweet posted with image:", tweet);
             return tweet;
         } else {
             console.error("Failed to upload image, tweet not posted.");
         }
     } catch (error) {
-        console.error("Error posting tweet:", error);
+        console.error("Error posting tweet with image:", error);
     }
 };
-
 
 
 // Test endpoint to manually generate and post a tweet
@@ -144,10 +148,10 @@ app.post('/PostTweet', async (req, res) => {
 
     if (containsText) {
         try {
-            const imagePath = await generateImage(data);
+            const imageBuffer = await generateImage(data); // Get image buffer directly
 
-            if (imagePath) {
-                tweetContent = await postTweetWithImage(data, imagePath);
+            if (imageBuffer) {
+                tweetContent = await postTweetWithImage(data, imageBuffer);
                 return res.json({ success: true, tweet: data });
             } else {
                 return res.status(500).json({ success: false, error: "Failed to generate image." });
@@ -173,20 +177,22 @@ app.post('/PostTweet', async (req, res) => {
 });
 
 // Schedule job to post a tweet at 8 AM every day
-schedule.scheduleJob('0 8 * * *', async () => {
+schedule.scheduleJob('30 8 * * *', async () => {
     const prompt = tweetPrompts[currentPromptIndex];
     let tweetContent;
 
     const containsText = prompt.toLowerCase().includes('$image');
     const data = await generateTweet(prompt);
-
+    console.log("data is ", data);
 
     if (containsText) {
         try {
-            const imagePath = await generateImage(data);
+            const imageBuffer = await generateImage(data); // Get image buffer directly
 
-            if (imagePath) {
-                tweetContent = await postTweetWithImage(data, imagePath);
+            if (imageBuffer) {
+                tweetContent = await postTweetWithImage(data, imageBuffer);
+                await postTweet(data);
+
             } else {
                 console.error("Failed to generate image.");
             }
