@@ -176,44 +176,80 @@ app.post('/PostTweet', async (req, res) => {
     currentPromptIndex = (currentPromptIndex + 1) % tweetPrompts.length;
 });
 
-// Schedule job to post a tweet at 8 AM every day
-schedule.scheduleJob('30 8 * * *', async () => {
-    const prompt = tweetPrompts[currentPromptIndex];
-    let tweetContent;
+app.get('/triggerRandomTweet', async (req, res) => {
+    try {
+        // Pick a random prompt
+        const randomPromptIndex = Math.floor(Math.random() * tweetPrompts.length);
+        const prompt = tweetPrompts[randomPromptIndex];
 
-    const containsText = prompt.toLowerCase().includes('$image');
-    const data = await generateTweet(prompt);
-    console.log("data is ", data);
+        const containsImage = prompt.toLowerCase().includes('$image');
+        const tweetData = await generateTweet(prompt);
 
-    if (containsText) {
-        try {
-            const imageBuffer = await generateImage(data); // Get image buffer directly
-
+        if (containsImage) {
+            // Generate and post tweet with image
+            const imageBuffer = await generateImage(tweetData);
             if (imageBuffer) {
-                tweetContent = await postTweetWithImage(data, imageBuffer);
-                await postTweet(data);
-
+                const tweetContent = await postTweetWithImage(tweetData, imageBuffer);
+                return res.json({ success: true, tweet: tweetContent });
             } else {
-                console.error("Failed to generate image.");
+                return res.status(500).json({ success: false, error: "Failed to generate image." });
             }
-        } catch (error) {
-            console.error("Error generating image:", error);
-        }
-    } else {
-        try {
-            tweetContent = await generateTweet(prompt);
+        } else {
+            // Post tweet without image
+            const tweetContent = await generateTweet(prompt);
             if (tweetContent) {
                 await postTweet(tweetContent);
+                return res.json({ success: true, tweet: tweetContent });
             } else {
-                console.error("Failed to generate tweet.");
+                return res.status(500).json({ success: false, error: "Failed to generate tweet." });
             }
-        } catch (error) {
-            console.error("Error generating tweet:", error);
         }
+    } catch (error) {
+        console.error("Error triggering random tweet:", error);
+        return res.status(500).json({ success: false, error: error.message });
     }
-
-    currentPromptIndex = (currentPromptIndex + 1) % tweetPrompts.length;
 });
+
+
+// Schedule job to post a tweet at 8 AM every day
+
+// schedule.scheduleJob('30 8 * * *', async () => {
+//     const prompt = tweetPrompts[currentPromptIndex];
+//     let tweetContent;
+
+//     const containsText = prompt.toLowerCase().includes('$image');
+//     const data = await generateTweet(prompt);
+//     console.log("data is ", data);
+
+//     if (containsText) {
+//         try {
+//             const imageBuffer = await generateImage(data); // Get image buffer directly
+
+//             if (imageBuffer) {
+//                 tweetContent = await postTweetWithImage(data, imageBuffer);
+//                 await postTweet(data);
+
+//             } else {
+//                 console.error("Failed to generate image.");
+//             }
+//         } catch (error) {
+//             console.error("Error generating image:", error);
+//         }
+//     } else {
+//         try {
+//             tweetContent = await generateTweet(prompt);
+//             if (tweetContent) {
+//                 await postTweet(tweetContent);
+//             } else {
+//                 console.error("Failed to generate tweet.");
+//             }
+//         } catch (error) {
+//             console.error("Error generating tweet:", error);
+//         }
+//     }
+
+//     currentPromptIndex = (currentPromptIndex + 1) % tweetPrompts.length;
+// });
 
 // Start the server
 app.listen(port, () => {
